@@ -1,0 +1,14 @@
+bayes.c
+bayes.h
+Bayes.xs
+Changes
+Makefile.PL
+typemap
+MANIFEST
+LICENSE
+ppport.h
+README.md
+t/Geo-GDAL-Bayes-Hugin.t
+fallback/const-c.inc
+fallback/const-xs.inc
+lib/Geo/GDAL/Bayes/Hugin.pm

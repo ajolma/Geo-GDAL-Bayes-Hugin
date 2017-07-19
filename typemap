@@ -1,0 +1,30 @@
+TYPEMAP
+    Hugin_Domain T_PTROBJ_SPECIAL
+	Geo_GDAL_Bayes_Hugin T_PTROBJ_SPECIAL
+	GDALRasterBandH T_GDAL_BAND
+
+INPUT
+T_GDAL_BAND
+    if (sv_isobject($arg) && sv_derived_from($arg, \"Geo::GDAL::Band\")) {
+       SV *tsv = (SV*)SvRV($arg);
+       MAGIC *mg = mg_find(tsv, 'P');
+       tsv = mg->mg_obj;
+       tsv = (SV*)SvRV(tsv);
+       IV tmp = SvIV(tsv);
+       $var = INT2PTR($type, tmp);
+    } else {
+        croak(\"$var is not a Geo::GDAL::Band\");
+    }
+
+T_PTROBJ_SPECIAL
+	if (sv_derived_from($arg, \"${(my $ntt=$ntype)=~s/_/::/g;\$ntt}\")) {
+	   IV tmp = SvIV((SV*)SvRV($arg));
+	   $var = INT2PTR($type, tmp);
+	 } else {
+		croak(\"$var is not of type ${(my $ntt=$ntype)=~s/_/::/g;\$ntt}\");
+     }
+
+OUTPUT
+T_PTROBJ_SPECIAL
+	sv_setref_pv($arg, \"${(my $ntt=$ntype)=~s/_/::/g;\$ntt}\",
+	(void*)$var);
