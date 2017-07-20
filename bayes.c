@@ -30,7 +30,7 @@ Geo_GDAL_Bayes_Hugin create(HV *setup) {
     Geo_GDAL_Bayes_Hugin self = (Geo_GDAL_Bayes_Hugin)malloc(sizeof(Geo_GDAL_Bayes_Hugin_t));
     self->n = 0;
     self->names = NULL;
-    self->states = NULL;
+    self->offsets = NULL;
     self->domain = NULL;
     self->domain_sv = NULL;
     self->bands = NULL;
@@ -49,6 +49,7 @@ Geo_GDAL_Bayes_Hugin create(HV *setup) {
         }
         self->n += 1; // the last one will be output
         self->names = (char **)calloc(sizeof(char*), self->n);
+        self->offsets = (int *)calloc(sizeof(int), self->n);
         self->bands = (GDALRasterBandH *)calloc(sizeof(GDALRasterBandH*), self->n);
         self->band_svs = (SV **)calloc(sizeof(SV*), self->n);
         hv_iterinit(evidence);
@@ -94,6 +95,26 @@ Geo_GDAL_Bayes_Hugin create(HV *setup) {
         croak("The setup must have an entry '%s', which points to a hashref.", key);
     }
 
+    key = "offsets";
+    if (HV *offsets = SvHash(hv_fetch(setup, key, strlen(key), 0))) {
+        hv_iterinit(offsets);
+        while (HE* he = hv_iternext(offsets)) {
+            I32 len;
+            char *name = hv_iterkey(he, &len);
+            int found = 0;
+            for (int i = 0; i < self->n; i++) {
+                if (strcmp(self->names[i], name) == 0) {
+                    self->offsets[i] = SvIV(hv_iterval(offsets, he));
+                    found = 1;
+                }
+            }
+            if (!found) {
+                destroy(self);
+                croak("Unknown node name in offsets: %s.", name);
+            }
+        }
+    }
+
     key = "output";
     if (HV *output = SvHash(hv_fetch(setup, key, strlen(key), 0))) {
         int i = self->n-1;
@@ -133,7 +154,7 @@ Geo_GDAL_Bayes_Hugin create(HV *setup) {
             croak("output entry needs a %s and entry which is a valid Geo::GDAL::Band object.", key);
         }
 
-        key = "value";
+        key = "state";
         svp = hv_fetch(output, key, strlen(key), 0);
         if (svp) {                 
             self->value = (SvIV(*svp));
@@ -161,14 +182,13 @@ Geo_GDAL_Bayes_Hugin create(HV *setup) {
 }
 
 void destroy(Geo_GDAL_Bayes_Hugin self) {
-    // fixme: free names and states if not NULL
     if (self->names) {
         for (int i = 0; i < self->n; i++) {
             if (self->names[i]) free(self->names[i]);
         }
         free(self->names);
     }
-    if (self->states) free(self->states);
+    if (self->offsets) free(self->offsets);
     if (self->bands) {
         for (int i = 0; i < self->n; i++) {
             if (self->band_svs[i]) SvREFCNT_dec(self->band_svs[i]);
@@ -178,8 +198,6 @@ void destroy(Geo_GDAL_Bayes_Hugin self) {
     if (self->domain_sv) SvREFCNT_dec(self->domain_sv);
     free(self);
 }
-
-#define DEBUG 1
 
 void compute(Geo_GDAL_Bayes_Hugin self) {
 
@@ -247,11 +265,17 @@ void compute(Geo_GDAL_Bayes_Hugin self) {
                             k = ((GInt32*)(data[i]))[iX + iY * XValid];
                             break;
                         }
+                        int ok;
+                        double no_data = GDALGetRasterNoDataValue(self->bands[i], &ok);
+                        if (ok && k == no_data) {
+                            continue;
+                        }
 
 #ifdef DEBUG
                         fprintf(stderr, "%s = %i ", self->names[i], k);
 #endif
                         h_node_t node = h_domain_get_node_by_name(self->domain, self->names[i]);
+                        k += self->offsets[i];
                         h_status_t e = h_node_select_state(node, k);
                         if (e) {
                             croak("Error in node_select_state: %s\n", h_error_description(e));

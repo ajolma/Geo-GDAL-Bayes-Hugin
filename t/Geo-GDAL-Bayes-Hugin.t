@@ -34,7 +34,7 @@ my $setup = Geo::GDAL::Bayes::Hugin->new({
     output => {
         name => 'grass_wet',
         band => $grass_wet, # states are 0 (dry) and 1 (wet)
-        value => 1, # the state of whose probability is stored into the band
+        state => 1, # the state of whose probability is stored into the band
     }
 });
 

@@ -8,7 +8,7 @@ typedef h_domain_t Hugin_Domain;
 typedef struct {
     int n;
     char **names;
-    int *states;
+    int *offsets;
     int value;
     Hugin_Domain domain;
     SV *domain_sv;
