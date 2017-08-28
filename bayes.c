@@ -90,7 +90,7 @@ Geo_GDAL_Bayes_Hugin create(HV *setup) {
                 }
             }
             if (self->output_from_state < 0) {
-                croak("Node '%s' does not have state '%s'.", key, state);
+                croak("Node '%s' does not have state '%s'.", h_node_get_name(self->output_node), state);
             }
         } else {
             croak("Missing output => {%s => $state}.", key);
