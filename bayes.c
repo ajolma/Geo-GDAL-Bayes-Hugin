@@ -194,9 +194,6 @@ Geo_GDAL_Bayes_Hugin create(HV *setup) {
 
 void destroy(Geo_GDAL_Bayes_Hugin self) {
     if (self->evidence_nodes) {
-        for (int i = 0; i < self->n_evidence_nodes; i++) {
-            if (self->evidence_nodes[i]) free(self->evidence_nodes[i]);
-        }
         free(self->evidence_nodes);
     }
     if (self->evidence_offsets) free(self->evidence_offsets);
@@ -207,7 +204,6 @@ void destroy(Geo_GDAL_Bayes_Hugin self) {
         free(self->evidence_band_svs);
         free(self->evidence_bands);
     }
-    if (self->output_node) free(self->output_node);
     if (self->output_band_sv) SvREFCNT_dec(self->output_band_sv);
     if (self->domain_sv) SvREFCNT_dec(self->domain_sv);
     free(self);
