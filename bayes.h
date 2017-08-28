@@ -7,12 +7,12 @@ typedef h_domain_t Hugin_Domain;
 
 typedef struct {
     int n_evidence_nodes;
-    char **evidence_nodes;
+    h_node_t *evidence_nodes;
     int *evidence_offsets;
     GDALRasterBandH *evidence_bands;
     SV **evidence_band_svs;
     
-    char *output_node;
+    h_node_t output_node;
     int output_from_state;
     GDALRasterBandH output_band;
     SV *output_band_sv;

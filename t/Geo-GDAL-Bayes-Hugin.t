@@ -32,9 +32,9 @@ my $setup = Geo::GDAL::Bayes::Hugin->new({
         sprinkler => $sprinkler, # states are 0 (off) and 1 (on)
     },
     output => {
-        name => 'grass_wet',
+        node => 'grass_wet',
         band => $grass_wet, # states are 0 (dry) and 1 (wet)
-        state => 1, # the state of whose probability is stored into the band
+        state => 'T', # the state of whose probability is stored into the band
     }
 });
 

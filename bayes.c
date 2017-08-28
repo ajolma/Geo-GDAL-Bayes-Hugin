@@ -25,8 +25,22 @@ GDALRasterBandH SvBand(SV *sv) {
     return NULL;
 }
 
+h_node_t get_node_by_label_or_name(h_domain_t domain, const char *label) {
+    for (h_node_t node = h_domain_get_first_node(domain); node; node = h_node_get_next(node)) {
+        if (strcmp(h_node_get_label(node), label) == 0) {
+            return node;
+        }
+    }
+    for (h_node_t node = h_domain_get_first_node(domain); node; node = h_node_get_next(node)) {
+        if (strcmp(h_node_get_name(node), label) == 0) {
+            return node;
+        }
+    }
+    return NULL;
+}
+
 Geo_GDAL_Bayes_Hugin create(HV *setup) {
-    
+
     Geo_GDAL_Bayes_Hugin self = (Geo_GDAL_Bayes_Hugin)malloc(sizeof(Geo_GDAL_Bayes_Hugin_t));
     self->n_evidence_nodes = 0;
     self->evidence_nodes = NULL;
@@ -34,52 +48,75 @@ Geo_GDAL_Bayes_Hugin create(HV *setup) {
     self->evidence_bands = NULL;
     self->evidence_band_svs = NULL;
     self->output_node = NULL;
+    self->output_from_state = -1;
     self->output_band = NULL;
     self->output_band_sv = NULL;
     self->domain = NULL;
     self->domain_sv = NULL;
 
+    const char *key = "domain";
+    SV **svp = hv_fetch(setup, key, strlen(key), 0);
+    if (svp && SvROK(*svp) && sv_isobject(*svp) && sv_derived_from(*svp, "Hugin::Domain")) {
+        IV tmp = SvIV((SV*)SvRV(*svp));
+        self->domain = INT2PTR(Hugin_Domain, tmp);
+        SvREFCNT_inc(self->domain_sv = *svp);
+    } else {
+        destroy(self);
+        croak("Missing %s => $domain or the $domain is not a valid Hugin::Domain object.", key);
+    }
+
     // output is required, evidence is not
-    const char *key = "output";
+    key = "output";
     if (HV *output = SvHash(hv_fetch(setup, key, strlen(key), 0))) {
-        
-        key = "name";
+
+        key = "node";
         SV **svp = hv_fetch(output, key, strlen(key), 0);
-        if (svp) {                 
-            self->output_node = strdup(SvPV_nolen(*svp));
-        } else {
-            croak("output entry needs a %s entry.", key);
-        }
-        
-        key = "band";
-        svp = hv_fetch(output, key, strlen(key), 0);
-        if (svp && (self->output_band = SvBand(*svp))) {
-            SvREFCNT_inc(self->output_band_sv = *svp);
-            
-            self->width = GDALGetRasterBandXSize(self->output_band);
-            self->height = GDALGetRasterBandYSize(self->output_band);
-            
-            GDALDataType dt = GDALGetRasterDataType(self->output_band);
-            if (!(dt == GDT_Float32 || dt == GDT_Float64)) {
-                croak("Output band %s is not floating point (it is %s)", self->output_node, GDALGetDataTypeName(dt));
+        if (svp) {
+            self->output_node = get_node_by_label_or_name(self->domain, SvPV_nolen(*svp));
+            if (!self->output_node) {
+                croak("Node '%s' does not exist.", SvPV_nolen(*svp));
             }
-        
         } else {
-            croak("Missing output => {%s => $band} or the $band is not a valid Geo::GDAL::Band.", key);
+            croak("Missing output => {%s => $node_label}.", key);
         }
 
         key = "state";
         svp = hv_fetch(output, key, strlen(key), 0);
-        if (svp) {                 
-            self->output_from_state = SvIV(*svp);
+        if (svp) {
+            const char *state = SvPV_nolen(*svp);
+            for (int i = 0; i < h_node_get_number_of_states(self->output_node); i++) {
+                if (strcmp(h_node_get_state_label(self->output_node, i), state) == 0) {
+                    self->output_from_state = i;
+                }
+            }
+            if (self->output_from_state < 0) {
+                croak("Node '%s' does not have state '%s'.", key, state);
+            }
         } else {
-            croak("output entry needs a %s entry.", key);
+            croak("Missing output => {%s => $state}.", key);
         }
-        
+
+        key = "band";
+        svp = hv_fetch(output, key, strlen(key), 0);
+        if (svp && (self->output_band = SvBand(*svp))) {
+            SvREFCNT_inc(self->output_band_sv = *svp);
+
+            self->width = GDALGetRasterBandXSize(self->output_band);
+            self->height = GDALGetRasterBandYSize(self->output_band);
+
+            GDALDataType dt = GDALGetRasterDataType(self->output_band);
+            if (!(dt == GDT_Float32 || dt == GDT_Float64)) {
+                croak("Output band %s is not floating point (it is %s)", self->output_node, GDALGetDataTypeName(dt));
+            }
+
+        } else {
+            croak("Missing output => {%s => $band} or the $band is not a valid Geo::GDAL::Band.", key);
+        }
+
     } else {
         destroy(self);
         croak("Missing %s => {}.", key);
-    } 
+    }
 
     key = "evidence";
     if (HV *evidence = SvHash(hv_fetch(setup, key, strlen(key), 0))) {
@@ -88,24 +125,24 @@ Geo_GDAL_Bayes_Hugin create(HV *setup) {
         while (HE* he = hv_iternext(evidence)) {
             self->n_evidence_nodes += 1;
         }
-        self->evidence_nodes = (char **)calloc(sizeof(char*), self->n_evidence_nodes);
+        self->evidence_nodes = (h_node_t *)calloc(sizeof(h_node_t), self->n_evidence_nodes);
         self->evidence_offsets = (int *)calloc(sizeof(int), self->n_evidence_nodes);
         self->evidence_bands = (GDALRasterBandH *)calloc(sizeof(GDALRasterBandH*), self->n_evidence_nodes);
         self->evidence_band_svs = (SV **)calloc(sizeof(SV*), self->n_evidence_nodes);
         hv_iterinit(evidence);
         int i = 0;
         while (HE* he = hv_iternext(evidence)) {
-            
+
             I32 len;
-            self->evidence_nodes[i] = strdup(hv_iterkey(he, &len));
-            
+            self->evidence_nodes[i] = get_node_by_label_or_name(self->domain, hv_iterkey(he, &len));
+
             SV *sv = hv_iterval(evidence, he);
             if ((self->evidence_bands[i] = SvBand(sv))) {
                 SvREFCNT_inc(self->evidence_band_svs[i] = sv);
-                
+
                 int w = GDALGetRasterBandXSize(self->evidence_bands[i]),
                     h = GDALGetRasterBandYSize(self->evidence_bands[i]);
-       
+
                 if (w != self->width || h != self->height) {
                     croak("Band sizes differ. Expected (%i, %i), got (%i, %i) in %s.)",
                           self->width, self->height, w, h, self->evidence_nodes[i]);
@@ -119,7 +156,7 @@ Geo_GDAL_Bayes_Hugin create(HV *setup) {
                       dt == GDT_Int32)) {
                     croak("Evidence band %s is not integer (it is %s).", self->evidence_nodes[i], GDALGetDataTypeName(dt));
                 }
-        
+
             } else {
                 croak("Value in node %s is not a valid Geo::GDAL::Band object.", self->evidence_nodes[i]);
             }
@@ -139,7 +176,7 @@ Geo_GDAL_Bayes_Hugin create(HV *setup) {
             int found = 0;
             I32 offset = SvIV(hv_iterval(offsets, he));
             for (int i = 0; i < self->n_evidence_nodes; i++) {
-                if (strcmp(self->evidence_nodes[i], name) == 0) {
+                if (strcmp(h_node_get_label(self->evidence_nodes[i]), name) == 0) {
                     self->evidence_offsets[i] = offset;
                     found = 1;
                     break;
@@ -152,17 +189,6 @@ Geo_GDAL_Bayes_Hugin create(HV *setup) {
         }
     }
 
-    key = "domain";
-    SV **svp = hv_fetch(setup, key, strlen(key), 0);
-    if (svp && SvROK(*svp) && sv_isobject(*svp) && sv_derived_from(*svp, "Hugin::Domain")) {
-        IV tmp = SvIV((SV*)SvRV(*svp));
-        self->domain = INT2PTR(Hugin_Domain, tmp);
-        SvREFCNT_inc(self->domain_sv = *svp);
-    } else {
-        destroy(self);
-        croak("Missing %s => $domain or the $domain is not a valid Hugin::Domain object.", key);
-    }
-    
     return self;
 }
 
@@ -206,18 +232,18 @@ void compute(Geo_GDAL_Bayes_Hugin self) {
 
             int XPixelOff = xb * XBlockSize;
             int YPixelOff = yb * YBlockSize;
-            
+
             int XValid = XBlockSize;
             int YValid = YBlockSize;
-            
+
             if (XPixelOff + XBlockSize >= self->width) {
                 XValid = self->width - XPixelOff;
             }
-            
+
             if (YPixelOff + YBlockSize >= self->height) {
                 YValid = self->height - YPixelOff;
             }
-            
+
             for (int i = 0; i < self->n_evidence_nodes; i++) {
                 CPLErr e = GDALRasterIO(
                     self->evidence_bands[i], GF_Read,
@@ -231,12 +257,12 @@ void compute(Geo_GDAL_Bayes_Hugin self) {
                     croak("Error (%i) while reading a block of data for %s.", e, self->evidence_nodes[i]);
                 }
             }
-            
+
             for (int iY = 0; iY < YValid; ++iY) {
                 for (int iX = 0; iX < XValid; ++iX) {
-                    
+
                     for (int i = 0; i < self->n_evidence_nodes; i++) {
-                            
+
                         int32_t k = 0;
                         switch(GDALGetRasterDataType(self->evidence_bands[i])) {
                         case GDT_Byte:
@@ -261,23 +287,21 @@ void compute(Geo_GDAL_Bayes_Hugin self) {
                             continue;
                         }
 
-                        h_node_t node = h_domain_get_node_by_name(self->domain, self->evidence_nodes[i]);
                         k += self->evidence_offsets[i];
-                        h_status_t e = h_node_select_state(node, k);
+                        h_status_t e = h_node_select_state(self->evidence_nodes[i], k);
                         if (e) {
                             croak("Error in node_select_state: %s\n", h_error_description(e));
                         }
-                        
+
                     }
 
                     h_status_t e = h_domain_propagate(self->domain, h_equilibrium_sum, h_mode_normal);
                     if (e) {
                         croak("Error in domain_propagate: %s\n", h_error_description(e));
                     }
-                    
-                    h_node_t node = h_domain_get_node_by_name(self->domain, self->output_node);
-                    double nv = h_node_get_belief(node, self->output_from_state);
-                            
+
+                    double nv = h_node_get_belief(self->output_node, self->output_from_state);
+
                     switch(GDALGetRasterDataType(self->output_band)) {
                     case GDT_Float32:
                         ((float*)(output_data))[iX + iY * XValid] = nv;
@@ -302,7 +326,7 @@ void compute(Geo_GDAL_Bayes_Hugin self) {
             }
         }
     }
-    
+
     for (int i = 0; i < self->n_evidence_nodes; i++) {
         free(data[i]);
     }
