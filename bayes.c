@@ -286,7 +286,9 @@ void compute(Geo_GDAL_Bayes_Hugin self) {
                         k += self->evidence_offsets[i];
                         h_status_t e = h_node_select_state(self->evidence_nodes[i], k);
                         if (e) {
-                            croak("Error in node_select_state: %s\n", h_error_description(e));
+                            croak("Error in node_select_state (node %s, state %i): %s\n",
+                                  h_node_get_label(self->evidence_nodes[i]), k,
+                                  h_error_description(e));
                         }
 
                     }
