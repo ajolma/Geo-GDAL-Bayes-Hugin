@@ -250,7 +250,8 @@ void compute(Geo_GDAL_Bayes_Hugin self) {
                     GDALGetRasterDataType(self->evidence_bands[i]),
                     0,0);
                 if (e) {
-                    croak("Error (%i) while reading a block of data for %s.", e, self->evidence_nodes[i]);
+                    croak("GDAL error (%i) while reading a block of data from %s.", e,
+                          h_node_get_label(self->evidence_nodes[i]));
                 }
             }
 
@@ -286,7 +287,7 @@ void compute(Geo_GDAL_Bayes_Hugin self) {
                         k += self->evidence_offsets[i];
                         h_status_t e = h_node_select_state(self->evidence_nodes[i], k);
                         if (e) {
-                            croak("Error in node_select_state (node %s, state %i): %s\n",
+                            croak("HUGIN error in node_select_state (node %s, state %i): %s\n",
                                   h_node_get_label(self->evidence_nodes[i]), k,
                                   h_error_description(e));
                         }
@@ -295,7 +296,7 @@ void compute(Geo_GDAL_Bayes_Hugin self) {
 
                     h_status_t e = h_domain_propagate(self->domain, h_equilibrium_sum, h_mode_normal);
                     if (e) {
-                        croak("Error in domain_propagate: %s\n", h_error_description(e));
+                        croak("HUGIN error in domain_propagate: %s\n", h_error_description(e));
                     }
 
                     double nv = h_node_get_belief(self->output_node, self->output_from_state);
@@ -320,7 +321,7 @@ void compute(Geo_GDAL_Bayes_Hugin self) {
                 GDALGetRasterDataType(self->output_band),
                 0,0);
             if (e) {
-                croak("Error (%i) while writing a block of data from %s.", e, self->output_node);
+                croak("GDAL error (%i) while writing a block of data to %s.", e, self->output_node);
             }
         }
     }
